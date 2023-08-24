@@ -27,6 +27,7 @@ async def fetch_url(session, url, timeout=None):
 
 async def save_data(filename, data):
     async with aiofiles.open(filename, 'w') as file_handler:
+        logging.info(f"Starting to save data in file with filename {filename}")
         await file_handler.write(data)
 
 
@@ -39,6 +40,7 @@ def get_filename_from_url(url):
 def create_dir_for_data(path):
     if not os.path.exists(path):
         os.mkdir(path)
+        logging.info(f"Directory {path} created.")
         return True
     return False
 
@@ -92,31 +94,35 @@ async def find_news(session, url):
 
 async def parse(loop, session):
     news_found = await find_news(session, URL)
-    news_found = news_found[:NEWS_NUMBER]
+    if news_found:
+        news_found = news_found[:NEWS_NUMBER]
 
-    for news in news_found:
-        link = news['news']
-        if link:
-            filename = get_filename_from_url(link)
-            filedir = DATA_DIR + filename[:-5]
-            dir = create_dir_for_data(filedir)
-            if not dir:
-                logging.warning(f"URL {link} has been already downloaded!")
-            else:
-                news_data = await fetch_url(session, link)
-                await save_data(filedir + filename, data=news_data)
-                comment_link = news['comment']
-                download_comment_tasks = []
-                if comment_link:
-                    comment_links = await get_external_link(session, comment_link)
-                    for comm_link in comment_links:
-                        comment_dir = filedir + '/comments'
-                        create_dir_for_data(comment_dir)
-                        comment_file_name = comment_dir + get_filename_from_url(comm_link)
-                        comment_data = await fetch_url(session, comm_link)
-                        task = loop.create_task(save_data(comment_file_name, comment_data))
-                        download_comment_tasks.append(task)
-                await asyncio.gather(*download_comment_tasks)
+        for news in news_found:
+            link = news['news']
+            if link:
+                filename = get_filename_from_url(link)
+                filedir = DATA_DIR + filename[:-5]
+                dir = create_dir_for_data(filedir)
+                if not dir:
+                    logging.warning(f"URL {link} has been already downloaded!")
+                else:
+                    news_data = await fetch_url(session, link)
+                    await save_data(filedir + filename, data=news_data)
+                    comment_link = news['comment']
+                    download_comment_tasks = []
+                    if comment_link:
+                        comment_links = await get_external_link(session, comment_link)
+                        if comment_links:
+                            for comm_link in comment_links:
+                                comment_dir = filedir + '/comments'
+                                create_dir_for_data(comment_dir)
+                                comment_file_name = comment_dir + get_filename_from_url(comm_link)
+                                comment_data = await fetch_url(session, comm_link)
+                                task = loop.create_task(save_data(comment_file_name, comment_data))
+                                download_comment_tasks.append(task)
+                    await asyncio.gather(*download_comment_tasks)
+    else:
+        raise ValueError
 
 
 async def parsing_loop(loop, session, timeout):
@@ -134,4 +140,11 @@ async def start_parse(timeout):
 
 if __name__ == '__main__':
     create_dir_for_data(DATA_DIR)
-    asyncio.run(start_parse(TIMEOUT))
+    try:
+        asyncio.run(start_parse(TIMEOUT))
+    except KeyboardInterrupt:
+        logging.info("Exit by keyboard interrupt")
+        exit(1)
+    except ValueError:
+        logging.warning("No news found")
+        exit(1)
