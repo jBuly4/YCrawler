@@ -132,3 +132,4 @@ dmypy.json
 /.idea
 /.env
 /data
+/hacker_news_data
